@@ -1,0 +1,196 @@
+name: Tag a new release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release version in <Major>.<minor> format
+        default: master
+        type: string
+      dry-run:
+        description: Do not push anything
+        default: true
+        type: boolean
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Get closest tag to master
+        id: latest-tag
+        run: |
+          tag=(0 0)
+          while read -r line; do
+            if [[ "$line" =~ ([[:digit:]]+)\.([[:digit:]]+)\.x ]]; then
+                if ((tag[0] < BASH_REMATCH[1])); then
+                    tag=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")
+                elif ((tag[0] == BASH_REMATCH[1] && tag[1] < BASH_REMATCH[2])); then
+                    tag=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")
+                fi
+            fi
+          done < <(git tag --merged)
+
+          echo "major=${tag[0]}" >> "$GITHUB_OUTPUT"
+          echo "minor=${tag[1]}" >> "$GITHUB_OUTPUT"
+
+      - name: Parse required release
+        id: required-release
+        env:
+          MAJOR: ${{ steps.latest-tag.outputs.major }}
+          MINOR: ${{ steps.latest-tag.outputs.minor }}
+        run: |
+          function add_outputs() {
+            cat << EOF >> "$GITHUB_OUTPUT"
+          major=$1
+          minor=$2
+          type=$3
+          EOF
+          }
+
+          if [[ "${{ inputs.version }}" == "master" ]]; then
+            add_outputs "${MAJOR}" "$((MINOR+1))" "minor"
+          elif [[ "${{ inputs.version }}" =~ ([[:digit:]]+)\.([[:digit:]]+) ]]; then
+            if ((BASH_REMATCH[1] > MAJOR)); then
+              add_outputs "$((MAJOR+1))" "0" "major"
+            elif ((BASH_REMATCH[2] > MINOR)); then
+              add_outputs "${MAJOR}" "$((MINOR+1))" "minor"
+            else
+              add_outputs "${MAJOR}" "${BASH_REMATCH[2]}" "patch"
+            fi
+          else
+            echo >&2 "Invalid version ${{ inputs.version }}"
+            exit 1
+          fi
+
+      - name: Get patch version
+        id: patch-version
+        if: steps.required-release.outputs.type == 'patch'
+        env:
+          MAJOR: ${{ steps.required-release.outputs.major }}
+          MINOR: ${{ steps.required-release.outputs.minor }}
+        run: |
+          if [[ "${{ inputs.version }}" =~ ([[:digit:]]+)\.([[:digit:]]+) ]]; then
+            git checkout "release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            git pull --ff-only
+
+            patch=0
+            while read -r line; do
+              if [[ "$line" =~ ${MAJOR}.${MINOR}.([[:digit:]]+) ]]; then
+                if ((BASH_REMATCH[1] > patch)); then
+                  patch="${BASH_REMATCH[1]}"
+                fi
+              fi
+            done < <(git tag --merged)
+          else
+            echo >&2 "Invalid version input '${{ inputs.version }}'"
+            exit 1
+          fi
+
+          echo "value=$((patch+1))" >> "$GITHUB_OUTPUT"
+
+      - name: Set variables
+        id: variables
+        env:
+          MAJOR: ${{ steps.required-release.outputs.major }}
+          MINOR: ${{ steps.required-release.outputs.minor }}
+          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
+          RELEASE_TYPE: ${{ steps.required-release.outputs.type }}
+        run: |
+          case "$RELEASE_TYPE" in
+            major)
+              cat << EOF >> "$GITHUB_OUTPUT"
+          major=${MAJOR}
+          minor=0
+          patch=0
+          branch=master
+          EOF
+            ;;
+
+            minor)
+              cat << EOF >> "$GITHUB_OUTPUT"
+          major=${MAJOR}
+          minor=${MINOR}
+          patch=0
+          branch=master
+          EOF
+            ;;
+
+            patch)
+              cat << EOF >> "$GITHUB_OUTPUT"
+          major=${MAJOR}
+          minor=${MINOR}
+          patch=${PATCH}
+          branch=release-${MAJOR}.${MINOR}
+          EOF
+            ;;
+
+            *)
+              echo >&2 "Invalid release type '$RELEASE_TYPE'"
+              exit 1
+            ;;
+          esac
+
+      - name: Initialize mandatory git config
+        run: |
+          git config user.name "${{ github.event.sender.login }}"
+          git config user.email noreply@github.com
+
+      - name: Create release branch
+        if: steps.variables.outputs.branch == 'master'
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+        run: |
+          git checkout master
+          git pull --ff-only
+          git tag "${RELEASE}.x"
+          git checkout -b "release-${RELEASE}"
+          git commit --no-verify --allow-empty -m "Empty commit to diverge ${RELEASE} from master"
+
+      - name: Push release branch
+        if: steps.variables.outputs.branch == 'master' && !inputs.dry-run
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+        run: |
+          git push origin "${RELEASE}.x"
+          git push --set-upstream origin "release-${RELEASE}"
+
+      - name: Create release tag
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+          PATCH: ${{ steps.variables.outputs.patch }}
+        run: |
+          git checkout "release-${RELEASE}"
+          git pull --ff-only
+          git tag "${RELEASE}.${PATCH}"
+
+      - name: Create release tag
+        if: ${{ !inputs.dry-run }}
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+          PATCH: ${{ steps.variables.outputs.patch }}
+        run: |
+          git push origin "${RELEASE}.${PATCH}"
+
+      - name: Create tag in falcosecurity-libs
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+          PATCH: ${{ steps.variables.outputs.patch }}
+        run: |
+          git submodule update --init falcosecurity-libs
+          cd falcosecurity-libs/
+          git tag "${RELEASE}.${PATCH}"
+
+      - name: Push tag in falcosecurity-libs
+        if: ${{ !inputs.dry-run }}
+        env:
+          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+          PATCH: ${{ steps.variables.outputs.patch }}
+        run: |
+          cd falcosecurity-libs/
+          git push origin "${RELEASE}.${PATCH}"
