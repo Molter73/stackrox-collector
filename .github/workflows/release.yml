@@ -15,8 +15,14 @@ on:
         type: boolean
 
 jobs:
-  release:
-    runs-on: ubuntu-22.04
+  determine-version:
+    runs-on: ubuntu-24.04
+
+    outputs:
+      major: ${{ steps.final-values.outputs.major }}
+      minor: ${{ steps.final-values.outputs.minor }}
+      patch: ${{ steps.patch-version.outputs.value || '0' }}
+      release-type: ${{ steps.final-values.outputs.type }}
 
     steps:
       - uses: actions/checkout@v4
@@ -127,15 +133,24 @@ jobs:
             notice "Release branch" "release-${MAJOR}.${MINOR}"
           fi
 
+  release:
+    runs-on: ubuntu-24.04
+    if: ${{ !inputs.dry-run }}
+    needs:
+    - determine-version
+    env:
+      RELEASE: ${{ needs.determine-version.outputs.major }}.${{ needs.determine-version.outputs.minor }}
+      RELEASE_TYPE: ${{ needs.determine-version.outputs.release-type }}
+      PATCH: ${{ needs.determine-version.outputs.patch }}
+
+    steps:
       - name: Initialize mandatory git config
         run: |
           git config user.name "${{ github.event.sender.login }}"
           git config user.email noreply@github.com
 
       - name: Create release branch
-        if: steps.final-values.outputs.type != 'patch'
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
+        if: needs.determine-version.outputs.release-type != 'patch'
         run: |
           git checkout master
           git pull --ff-only
@@ -144,18 +159,12 @@ jobs:
           git commit --no-verify --allow-empty -m "Empty commit to diverge ${RELEASE} from master"
 
       - name: Push release branch
-        if: steps.final-values.outputs.type != 'patch' && !inputs.dry-run
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
+        if: needs.determine-version.outputs.release-type != 'patch'
         run: |
           git push origin "${RELEASE}.x"
           git push --set-upstream origin "release-${RELEASE}"
 
       - name: Create release tag
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
-          RELEASE_TYPE: ${{ steps.required-release.outputs.type }}
-          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
         run: |
           git checkout "release-${RELEASE}"
           if [[ "${RELEASE_TYPE}" == "patch" ]]; then
@@ -164,27 +173,16 @@ jobs:
           git tag "${RELEASE}.${PATCH}"
 
       - name: Push release tag
-        if: ${{ !inputs.dry-run }}
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
-          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
         run: |
           git push origin "${RELEASE}.${PATCH}"
 
       - name: Create tag in falcosecurity-libs
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
-          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
         run: |
           git submodule update --init falcosecurity-libs
           cd falcosecurity-libs/
           git tag "${RELEASE}.${PATCH}"
 
       - name: Push tag in falcosecurity-libs
-        if: ${{ !inputs.dry-run }}
-        env:
-          RELEASE: ${{ steps.final-values.outputs.major }}.${{ steps.final-values.outputs.minor }}
-          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
         run: |
           cd falcosecurity-libs/
           git push origin "${RELEASE}.${PATCH}"
