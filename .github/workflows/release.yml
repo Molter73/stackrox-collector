@@ -130,11 +130,16 @@ jobs:
             ;;
           esac
 
-          echo "Will tag a ${RELEASE_TYPE} release with version: ${MAJOR}.${MINOR}.${PATCH}"
-          echo "Branching off of ${BRANCH}"
+          function notice() {
+            echo "::notice title=$1:: $2"
+          }
+
+          notice "Release type" "${RELEASE_TYPE}"
+          notice "Tag" "${MAJOR}.${MINOR}.${PATCH}"
+          notice "Base branch" "${BRANCH}"
           if [[ "${BRANCH}" == "master" ]]; then
-            echo "Tag ${MAJOR}.${MINOR}.x will be created"
-            echo "Branch release-${MAJOR}.${MINOR} will be created"
+            notice "Master tag" "${MAJOR}.${MINOR}.x"
+            notice "Release branch" "release-${MAJOR}.${MINOR}"
           fi
 
               cat << EOF >> "$GITHUB_OUTPUT"
