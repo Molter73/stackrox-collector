@@ -97,37 +97,31 @@ jobs:
       - name: Set variables
         id: variables
         env:
-          MAJOR: ${{ steps.required-release.outputs.major }}
-          MINOR: ${{ steps.required-release.outputs.minor }}
-          PATCH: ${{ steps.patch-version.outputs.value || '0' }}
+          REQUIRED_MAJOR: ${{ steps.required-release.outputs.major }}
+          REQUIRED_MINOR: ${{ steps.required-release.outputs.minor }}
+          REQUIRED_PATCH: ${{ steps.patch-version.outputs.value || '0' }}
           RELEASE_TYPE: ${{ steps.required-release.outputs.type }}
         run: |
           case "$RELEASE_TYPE" in
             major)
-              cat << EOF >> "$GITHUB_OUTPUT"
-          major=${MAJOR}
-          minor=0
-          patch=0
-          branch=master
-          EOF
+              MAJOR=${REQUIRED_MAJOR}
+              MINOR=0
+              PATCH=0
+              BRANCH=master
             ;;
 
             minor)
-              cat << EOF >> "$GITHUB_OUTPUT"
-          major=${MAJOR}
-          minor=${MINOR}
-          patch=0
-          branch=master
-          EOF
+              MAJOR=${REQUIRED_MAJOR}
+              MINOR=${REQUIRED_MINOR}
+              PATCH=0
+              BRANCH=master
             ;;
 
             patch)
-              cat << EOF >> "$GITHUB_OUTPUT"
-          major=${MAJOR}
-          minor=${MINOR}
-          patch=${PATCH}
-          branch=release-${MAJOR}.${MINOR}
-          EOF
+              MAJOR=${REQUIRED_MAJOR}
+              MINOR=${REQUIRED_MINOR}
+              PATCH=${REQUIRED_PATCH}
+              BRANCH=release-${MAJOR}.${MINOR}
             ;;
 
             *)
@@ -135,6 +129,20 @@ jobs:
               exit 1
             ;;
           esac
+
+          echo "Will tag a ${RELEASE_TYPE} release with version: ${MAJOR}.${MINOR}.${PATCH}"
+          echo "Branching off of ${BRANCH}"
+          if [[ "${BRANCH}" == "master" ]]; then
+            echo "Tag ${MAJOR}.${MINOR}.x will be created"
+            echo "Branch release-${MAJOR}.${MINOR} will be created"
+          fi
+
+              cat << EOF >> "$GITHUB_OUTPUT"
+          major=${MAJOR}
+          minor=${MINOR}
+          patch=${PATCH}
+          branch=${BRANCH}
+          EOF
 
       - name: Initialize mandatory git config
         run: |
