@@ -163,13 +163,16 @@ jobs:
       - name: Create release tag
         env:
           RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+          RELEASE_TYPE: ${{ steps.required-release.outputs.type }}
           PATCH: ${{ steps.variables.outputs.patch }}
         run: |
           git checkout "release-${RELEASE}"
-          git pull --ff-only
+          if [[ "${RELEASE_TYPE}" == "patch" ]]; then
+            git pull --ff-only
+          fi
           git tag "${RELEASE}.${PATCH}"
 
-      - name: Create release tag
+      - name: Push release tag
         if: ${{ !inputs.dry-run }}
         env:
           RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
