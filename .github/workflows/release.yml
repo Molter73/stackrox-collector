@@ -177,20 +177,20 @@ jobs:
         run: |
           git push origin "${RELEASE}.${PATCH}"
 
-      - name: Create tag in falcosecurity-libs
-        env:
-          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
-          PATCH: ${{ steps.variables.outputs.patch }}
-        run: |
-          git submodule update --init falcosecurity-libs
-          cd falcosecurity-libs/
-          git tag "${RELEASE}.${PATCH}"
-
-      - name: Push tag in falcosecurity-libs
-        if: ${{ !inputs.dry-run }}
-        env:
-          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
-          PATCH: ${{ steps.variables.outputs.patch }}
-        run: |
-          cd falcosecurity-libs/
-          git push origin "${RELEASE}.${PATCH}"
+#      - name: Create tag in falcosecurity-libs
+#        env:
+#          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+#          PATCH: ${{ steps.variables.outputs.patch }}
+#        run: |
+#          git submodule update --init falcosecurity-libs
+#          cd falcosecurity-libs/
+#          git tag "${RELEASE}.${PATCH}"
+#
+#      - name: Push tag in falcosecurity-libs
+#        if: ${{ !inputs.dry-run }}
+#        env:
+#          RELEASE: ${{ steps.variables.outputs.major }}.${{ steps.variables.outputs.minor }}
+#          PATCH: ${{ steps.variables.outputs.patch }}
+#        run: |
+#          cd falcosecurity-libs/
+#          git push origin "${RELEASE}.${PATCH}"
